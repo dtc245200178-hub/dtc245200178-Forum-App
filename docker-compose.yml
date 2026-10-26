@@ -1,0 +1,120 @@
+version: '3.8'
+
+networks:
+  frontend-network:
+    driver: bridge
+  backend-network:
+    internal: true
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: forum_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: RootSecurePass2026!
+      MYSQL_DATABASE: forum_db
+      MYSQL_USER: forum_user
+      MYSQL_PASSWORD: StrongP@ss2026!
+    networks:
+      - backend-network
+
+  app:
+    build: ./app
+    container_name: forum_app
+    restart: always
+    networks:
+      - frontend-network
+      - backend-network
+    depends_on:
+      - db
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: forum_pma
+    restart: always
+    environment:
+      PMA_HOST: db
+      MYSQL_ROOT_PASSWORD: RootSecurePass2026!
+    ports:
+      - "8080:80"
+    networks:
+      - frontend-network
+      - backend-network
+    depends_on:
+      - db
+
+  nginx:
+    image: nginx:alpine
+    container_name: forum_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./app:/var/www/html
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - frontend-network
+    depends_on:
+      - app
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: forum_cadvisor
+    restart: always
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+    privileged: true
+    networks:
+      - frontend-network
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter
+    container_name: forum_mysql_exporter
+    environment:
+      DATA_SOURCE_NAME: "forum_user:StrongP@ss2026!(db:3306)/forum_db"
+    networks:
+      - backend-network
+
+  prometheus:
+    image: prom/prometheus
+    container_name: forum_prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - frontend-network
+
+  grafana:
+    image: grafana/grafana
+    container_name: forum_grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend-network
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: forum_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml
+    command: -config.file=/etc/loki/loki-config.yml
+    networks:
+      - frontend-network
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: forum_promtail
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/promtail-config.yml
+    networks:
+      - frontend-network
